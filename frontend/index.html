@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>出差管理系统</title>
+  <style>
+    :root{
+      --bg:#f4f6fb; --surface:#fff; --text:#1f2430; --muted:#6b7280;
+      --line:#e6e9f0; --primary:#3b5bdb; --primary-d:#2f4bc4;
+      --ok:#2f9e44; --okbg:#e8f6ec; --warn:#d9870a; --warnbg:#fdf3e3;
+      --no:#e03131; --nobg:#fceceb; --radius:14px;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+      background:var(--bg);color:var(--text)}
+    header{background:linear-gradient(120deg,#3b5bdb,#5b6fe0);color:#fff;padding:18px 28px;
+      display:flex;align-items:center;justify-content:space-between}
+    header h1{font-size:18px;margin:0;font-weight:600;letter-spacing:.5px}
+    #userbar{font-size:14px;display:flex;gap:14px;align-items:center}
+    #userbar button{background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.35);
+      color:#fff;padding:5px 12px;border-radius:8px;cursor:pointer}
+    main{max-width:880px;margin:28px auto;padding:0 20px}
+    .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);
+      padding:22px 24px;margin-bottom:22px;box-shadow:0 1px 3px rgba(20,30,60,.04)}
+    .card h2{font-size:15px;margin:0 0 16px}
+    label{display:block;font-size:13px;color:var(--muted);margin:10px 0 4px}
+    input,textarea{width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:9px;
+      font-size:14px;font-family:inherit;background:#fbfcfe}
+    input:focus,textarea:focus{outline:none;border-color:var(--primary)}
+    .row{display:flex;gap:14px}.row>div{flex:1}
+    button.primary{margin-top:16px;background:var(--primary);color:#fff;border:none;
+      padding:10px 18px;border-radius:9px;font-size:14px;cursor:pointer;transition:background .15s}
+    button.primary:hover{background:var(--primary-d)}
+    .hidden{display:none}
+    .req{border:1px solid var(--line);border-radius:11px;padding:14px 16px;margin-bottom:12px}
+    .req .top{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+    .req .dest{font-weight:600}
+    .req .meta{font-size:13px;color:var(--muted);line-height:1.7}
+    .badge{font-size:12px;padding:3px 10px;border-radius:999px;font-weight:600}
+    .badge.pending{color:var(--warn);background:var(--warnbg)}
+    .badge.approved{color:var(--ok);background:var(--okbg)}
+    .badge.rejected{color:var(--no);background:var(--nobg)}
+    .actions{margin-top:10px;display:flex;gap:8px;align-items:center}
+    .actions input{flex:1}
+    .actions button{padding:7px 14px;border-radius:8px;border:none;cursor:pointer;font-size:13px}
+    .btn-ok{background:var(--okbg);color:var(--ok)}
+    .btn-no{background:var(--nobg);color:var(--no)}
+    .empty{color:var(--muted);font-size:14px;padding:8px 0}
+    .hint{font-size:12px;color:var(--muted);margin-top:6px}
+    #msg{position:fixed;top:14px;left:50%;transform:translateX(-50%);background:#1f2430;color:#fff;
+      padding:10px 18px;border-radius:10px;font-size:14px;opacity:0;transition:opacity .25s;pointer-events:none}
+    #msg.show{opacity:1}
+  </style>
+</head>
+<body>
+  <header>
+    <h1>出差管理系统</h1>
+    <div id="userbar" class="hidden">
+      <span id="who"></span>
+      <button onclick="logout()">退出</button>
+    </div>
+  </header>
+
+  <main>
+    <!-- 登录 -->
+    <section id="login-card" class="card">
+      <h2>登录</h2>
+      <div class="row">
+        <div><label>账号</label><input id="username" placeholder="zhangsan / manager" /></div>
+        <div><label>密码</label><input id="password" type="password" placeholder="123456" /></div>
+      </div>
+      <button class="primary" onclick="login()">登录</button>
+      <div class="hint">测试账号：员工 zhangsan / lisi，主管 manager，密码都是 123456</div>
+    </section>
+
+    <!-- 员工：提交申请 -->
+    <section id="apply-card" class="card hidden">
+      <h2>提交出差申请</h2>
+      <label>目的地</label><input id="destination" placeholder="如：上海" />
+      <div class="row">
+        <div><label>开始日期</label><input id="start_date" type="date" /></div>
+        <div><label>结束日期</label><input id="end_date" type="date" /></div>
+      </div>
+      <label>事由</label><textarea id="reason" rows="2" placeholder="如：拜访客户"></textarea>
+      <label>预估费用（元）</label><input id="estimated_cost" type="number" placeholder="2000" />
+      <button class="primary" onclick="submitRequest()">提交申请</button>
+    </section>
+
+    <!-- 列表：员工看自己的 / 主管看待办 -->
+    <section id="list-card" class="card hidden">
+      <h2 id="list-title"></h2>
+      <div id="list"></div>
+    </section>
+  </main>
+
+  <div id="msg"></div>
+
+  <script>
+    let currentUser = null;
+    const STATUS = { pending:'待审批', approved:'已通过', rejected:'已驳回' };
+
+    // 顶部一闪而过的提示
+    function toast(text){
+      const m = document.getElementById('msg');
+      m.textContent = text; m.classList.add('show');
+      setTimeout(()=>m.classList.remove('show'), 1800);
+    }
+
+    // 统一的接口调用：成功返回数据，失败时抛出后端给的中文提示
+    async function api(path, method='GET', body=null){
+      const opt = { method, headers:{'Content-Type':'application/json'} };
+      if(body) opt.body = JSON.stringify(body);
+      const res = await fetch(path, opt);
+      const data = await res.json();
+      if(!res.ok) throw new Error(data.detail || '请求失败');
+      return data;
+    }
+
+    async function login(){
+      const username = document.getElementById('username').value.trim();
+      const password = document.getElementById('password').value.trim();
+      try{
+        currentUser = await api('/login','POST',{username,password});
+        document.getElementById('login-card').classList.add('hidden');
+        document.getElementById('userbar').classList.remove('hidden');
+        const roleCn = currentUser.role==='manager' ? '主管' : '员工';
+        document.getElementById('who').textContent = `${currentUser.name}（${roleCn}）`;
+        currentUser.role==='manager' ? showManager() : showEmployee();
+      }catch(e){ toast(e.message); }
+    }
+
+    function logout(){ currentUser = null; location.reload(); }
+
+    function showEmployee(){
+      document.getElementById('apply-card').classList.remove('hidden');
+      document.getElementById('list-card').classList.remove('hidden');
+      document.getElementById('list-title').textContent = '我的出差申请';
+      loadMyRequests();
+    }
+
+    function showManager(){
+      document.getElementById('list-card').classList.remove('hidden');
+      document.getElementById('list-title').textContent = '待我审批';
+      loadPending();
+    }
+
+    async function submitRequest(){
+      const body = {
+        applicant_id: currentUser.id,
+        destination: document.getElementById('destination').value.trim(),
+        start_date: document.getElementById('start_date').value,
+        end_date: document.getElementById('end_date').value,
+        reason: document.getElementById('reason').value.trim(),
+        estimated_cost: Number(document.getElementById('estimated_cost').value || 0),
+      };
+      if(!body.destination || !body.start_date || !body.end_date){
+        toast('请填写目的地和起止日期'); return;
+      }
+      try{
+        await api('/travel-requests','POST',body);
+        toast('提交成功，等待主管审批');
+        ['destination','start_date','end_date','reason','estimated_cost']
+          .forEach(id=>document.getElementById(id).value='');
+        loadMyRequests();
+      }catch(e){ toast(e.message); }
+    }
+
+    const badge = (status)=>`<span class="badge ${status}">${STATUS[status]}</span>`;
+
+    // 员工：看自己提交的申请和它们的状态
+    async function loadMyRequests(){
+      const list = await api(`/travel-requests?applicant_id=${currentUser.id}`);
+      const box = document.getElementById('list');
+      if(!list.length){ box.innerHTML='<div class="empty">还没有申请，填写上面的表单提交一条吧。</div>'; return; }
+      box.innerHTML = list.reverse().map(r=>`
+        <div class="req">
+          <div class="top"><span class="dest">${r.destination}</span>${badge(r.status)}</div>
+          <div class="meta">
+            ${r.start_date} ~ ${r.end_date}　·　预估 ¥${r.estimated_cost}<br/>
+            事由：${r.reason || '—'}
+            ${r.approval_comment ? '<br/>审批意见：'+r.approval_comment : ''}
+          </div>
+        </div>`).join('');
+    }
+
+    // 主管：看待审批的申请，可通过/驳回
+    async function loadPending(){
+      const list = await api('/travel-requests?status=pending');
+      const box = document.getElementById('list');
+      if(!list.length){ box.innerHTML='<div class="empty">暂无待审批的申请 🎉</div>'; return; }
+      box.innerHTML = list.map(r=>`
+        <div class="req">
+          <div class="top"><span class="dest">${r.destination}</span>${badge(r.status)}</div>
+          <div class="meta">
+            申请人编号 ${r.applicant_id}　·　${r.start_date} ~ ${r.end_date}　·　预估 ¥${r.estimated_cost}<br/>
+            事由：${r.reason || '—'}
+          </div>
+          <div class="actions">
+            <input id="cm-${r.id}" placeholder="审批意见（可选）" />
+            <button class="btn-ok" onclick="decide(${r.id},'approve')">通过</button>
+            <button class="btn-no" onclick="decide(${r.id},'reject')">驳回</button>
+          </div>
+        </div>`).join('');
+    }
+
+    async function decide(id, action){
+      const comment = document.getElementById('cm-'+id).value.trim();
+      try{
+        await api(`/travel-requests/${id}/${action}`,'POST',{approver_id:currentUser.id, comment});
+        toast(action==='approve' ? '已通过' : '已驳回');
+        loadPending();
+      }catch(e){ toast(e.message); }
+    }
+  </script>
+</body>
+</html>

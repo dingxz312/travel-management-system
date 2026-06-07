@@ -1,0 +1,8 @@
+# Render 部署蓝图。在 render.com 新建 Blueprint、连上这个 Git 仓库即可自动部署。
+services:
+  - type: web
+    name: travel-mgmt
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --app-dir backend --host 0.0.0.0 --port $PORT
